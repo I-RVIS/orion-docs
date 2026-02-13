@@ -1,0 +1,29 @@
+orion.hardware.predefined\_interfaces package
+=============================================
+
+Submodules
+----------
+
+orion.hardware.predefined\_interfaces.piper\_robot module
+---------------------------------------------------------
+
+.. automodule:: orion.hardware.predefined_interfaces.piper_robot
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
+orion.hardware.predefined\_interfaces.sim\_robot module
+-------------------------------------------------------
+
+.. automodule:: orion.hardware.predefined_interfaces.sim_robot
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
+Module contents
+---------------
+
+.. automodule:: orion.hardware.predefined_interfaces
+   :members:
+   :show-inheritance:
+   :undoc-members:

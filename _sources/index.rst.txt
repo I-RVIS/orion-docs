@@ -1,0 +1,63 @@
+.. image:: _static/logo.webp
+   :width: 200px
+   :align: center
+   :alt: Orion Logo
+
+Orion Documentation
+===================
+
+Welcome to the official documentation of **Orion**.
+
+Orion is a modular robotics and motion framework designed for
+flexible kinematics, rendering, and advanced motion control workflows.
+
+This documentation provides:
+
+- 📦 Installation instructions
+- 🚀 Quick start guides
+- 🧠 API reference
+- 🛠 Developer notes
+- 📚 Examples
+
+---
+
+Getting Started
+---------------
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Getting Started
+
+   installation
+   quickstart
+
+---
+
+API Reference
+-------------
+
+.. toctree::
+   :maxdepth: 2
+   :caption: API Reference
+
+   modules
+
+---
+
+Examples
+--------
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Examples
+
+   examples
+
+---
+
+Indices and Tables
+------------------
+
+* :ref:`genindex`
+* :ref:`modindex`
+* :ref:`search`

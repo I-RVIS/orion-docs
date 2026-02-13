@@ -1,0 +1,37 @@
+orion.sensory.predefined\_sensors package
+=========================================
+
+Submodules
+----------
+
+orion.sensory.predefined\_sensors.camera module
+-----------------------------------------------
+
+.. automodule:: orion.sensory.predefined_sensors.camera
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
+orion.sensory.predefined\_sensors.microphone module
+---------------------------------------------------
+
+.. automodule:: orion.sensory.predefined_sensors.microphone
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
+orion.sensory.predefined\_sensors.mock\_sensor module
+-----------------------------------------------------
+
+.. automodule:: orion.sensory.predefined_sensors.mock_sensor
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
+Module contents
+---------------
+
+.. automodule:: orion.sensory.predefined_sensors
+   :members:
+   :show-inheritance:
+   :undoc-members:

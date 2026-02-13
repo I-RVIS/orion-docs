@@ -1,0 +1,87 @@
+Quickstart
+==========
+
+This guide walks you through a minimal Orion workflow so you can
+get up and running in just a few minutes.
+
+---
+
+Basic Import
+------------
+
+After installation, verify that Orion is available:
+
+.. code-block:: python
+
+   import orion
+   print(orion.__version__)
+
+---
+
+Minimal Example
+---------------
+
+Below is a simple example demonstrating how to initialize a solver
+and run a basic motion computation.
+
+.. code-block:: python
+
+   from orion.motion import IKSolver
+   import numpy as np
+
+   # Create solver
+   solver = IKSolver()
+
+   # Example target pose (position + orientation)
+   target_position = np.array([0.4, 0.2, 0.3])
+   target_orientation = np.eye(3)
+
+   # Solve inverse kinematics
+   solution = solver.solve(target_position, target_orientation)
+
+   print("Joint solution:", solution)
+
+---
+
+Working With Models
+-------------------
+
+If your workflow involves loading a robot model:
+
+.. code-block:: python
+
+   ARM_MODEL_PATH = "path/to/your/robot.xml"
+
+   solver = IKSolver(model_path=ARM_MODEL_PATH)
+
+Make sure the model file exists and is correctly formatted.
+
+---
+
+Running With a Viewer (Optional)
+---------------------------------
+
+If Orion is configured with visualization support:
+
+.. code-block:: python
+
+   trajectory = solver.solveIK_viewer(
+       target_position,
+       target_orientation
+   )
+
+This opens an interactive viewer and displays the motion result.
+
+---
+
+Next Steps
+----------
+
+Now that you have a basic setup running, you may want to:
+
+- Explore the :ref:`API Reference <modules>`
+- Check available motion utilities
+- Read developer notes
+- Experiment with different kinematic targets
+
+For more advanced workflows, see the Examples section.

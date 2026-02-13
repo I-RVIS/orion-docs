@@ -1,0 +1,19 @@
+orion.hardware package
+======================
+
+Subpackages
+-----------
+
+.. toctree::
+   :maxdepth: 4
+
+   orion.hardware.predefined_interfaces
+   orion.hardware.robot
+
+Module contents
+---------------
+
+.. automodule:: orion.hardware
+   :members:
+   :show-inheritance:
+   :undoc-members:

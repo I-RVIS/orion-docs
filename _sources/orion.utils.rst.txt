@@ -1,0 +1,29 @@
+orion.utils package
+===================
+
+Submodules
+----------
+
+orion.utils.constants module
+----------------------------
+
+.. automodule:: orion.utils.constants
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
+orion.utils.utils module
+------------------------
+
+.. automodule:: orion.utils.utils
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
+Module contents
+---------------
+
+.. automodule:: orion.utils
+   :members:
+   :show-inheritance:
+   :undoc-members:
