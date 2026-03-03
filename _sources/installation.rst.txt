@@ -1,0 +1,90 @@
+Installation
+============
+
+Orion can be installed either as a released package (recommended)
+or in development mode for contributors.
+
+---
+
+Install from TestPyPI
+---------------------
+
+To install the latest testing release:
+
+.. code-block:: bash
+
+   pip install \
+     --index-url https://test.pypi.org/simple/ \
+     --extra-index-url https://pypi.org/simple \
+     orion-lumirae-ai
+
+This installs the published TestPyPI build while resolving dependencies
+from the official PyPI repository when needed.
+
+---
+
+System Dependencies (Linux)
+---------------------------
+
+If you encounter wheel build errors while installing ``pyaudio``,
+install the required system dependencies first:
+
+.. code-block:: bash
+
+   sudo apt install portaudio19-dev python3-pyaudio
+
+Then retry the installation.
+
+---
+
+Development Installation
+------------------------
+
+If you want to contribute or work on Orion locally:
+
+Clone the repository:
+
+.. code-block:: bash
+
+   git clone git@github.com:I-RVIS/orion.git
+   cd orion
+
+Create a virtual environment:
+
+.. code-block:: bash
+
+   python -m venv .venv
+
+Activate the virtual environment:
+
+Windows:
+
+.. code-block:: bash
+
+   . .venv\Scripts\activate
+
+Ubuntu / macOS:
+
+.. code-block:: bash
+
+   source .venv/bin/activate
+
+Install in editable mode with development dependencies:
+
+.. code-block:: bash
+
+   pip install -e .[dev]
+
+This allows live code changes without reinstalling the package.
+
+---
+
+Verify Installation
+-------------------
+
+After installation, verify that Orion is available:
+
+.. code-block:: python
+
+   import orion
+   print(orion.__version__)

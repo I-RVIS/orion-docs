@@ -1,0 +1,298 @@
+The Control Loop
+================
+
+This guide explains how to implement a complete robot control loop using Orion —
+from loading the robot model to executing motion on hardware.
+
+---
+
+Overview
+--------
+
+The control loop follows a clear pipeline:
+
+.. code-block:: text
+
+    XML Model                Hardware
+    Definition               Interface
+       |                        ^
+       v                        |
+   +---------+   +---------+   +---------+   +---------+   +---------+
+   |  Load   |-->|  Render |-->|   IK    |-->|Collision|-->|  Move   |
+   |  Model  |   |  Scene  |   | Solver  |   |  Check  |   | Command |
+   +---------+   +---------+   +---------+   +---------+   +---------+
+       |              |              |              |              |
+       v              v              v              v              v
+     MuJoCo       Shared         Joint         Safe path      Robot
+     MjModel      Memory        Trajectory     validated      executes
+     parsed       stream         generated     trajectory     trajectory
+
+Each step feeds into the next, forming a closed loop that runs continuously.
+
+---
+
+Step 1 — Define the Robot Model
+--------------------------------
+
+Everything starts with a **MuJoCo XML file** that describes your robot's
+geometry, joints, and physical properties.
+
+.. code-block:: text
+
+   robot.xml
+   │
+   ├── <asset>           STL meshes for each link
+   ├── <worldbody>
+   │   └── <body>        Kinematic chain: base → link1 → ... → link6 → gripper
+   │       ├── <joint>   6 revolute joints with limits and force ranges
+   │       ├── <geom>    Visual meshes per link
+   │       └── <site>    End-effector frame marker ("eef_site")
+   └── <actuator>        Motor definitions for each joint
+
+The XML file is consumed by three systems:
+
+- **IKSolver** — for inverse kinematics computation
+- **Renderer** — for visualization
+- **CollisionChecker** — for path validation
+
+All three load the same model to ensure consistent behavior.
+
+---
+
+Step 2 — Initialize the Renderer
+---------------------------------
+
+The ``Renderer`` creates a visual preview of the robot state. It runs in a
+**background thread** and publishes frames to **shared memory** so other
+processes can display them in real time.
+
+.. code-block:: python
+
+   from orion.motion import Renderer
+   from orion.utils.constants import MOCK_XML_PATH
+
+   renderer = Renderer(
+       model_path=MOCK_XML_PATH,
+       width=640,
+       height=480,
+       debug=True
+   )
+
+   renderer.enable_shared_memory_stream("mujoco_stream")
+   renderer.start_realtime_stream(fps=30)
+
+**How it works internally:**
+
+.. code-block:: text
+
+   Main Thread                   Render Thread
+       |                              |
+       |  start_realtime_stream()     |
+       |----------------------------->|
+       |                              |
+       |    [ continuous loop ]       |
+       |                              |-- mj_forward(model, data)
+       |   renderer.data.qpos = q    |-- update_scene(data, camera)
+       |         |                    |-- render() → numpy frame
+       |         +--- data is ------->|-- publish_to_shared_memory()
+       |              shared          |-- sleep(1/fps)
+       |                              |
+
+A separate process can consume the stream:
+
+.. code-block:: python
+
+   from multiprocessing import shared_memory
+   import numpy as np
+
+   shm = shared_memory.SharedMemory(name="mujoco_stream")
+   frame = np.ndarray((480, 640, 3), dtype=np.uint8, buffer=shm.buf)
+   # Display with OpenCV, PIL, etc.
+
+---
+
+Step 3 — Initialize the IK Solver
+----------------------------------
+
+The ``IKSolver`` converts end-effector targets (position + orientation) into
+a sequence of joint angles that the robot can follow.
+
+.. code-block:: python
+
+   from orion.motion import IKSolver
+   from orion.types import AttachementFrameType
+
+   JOINT_NAMES = ['joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6']
+   GEOM_NAMES  = ['base_link', 'link1', 'link2', 'link3', 'link4',
+                  'link5', 'link6', 'gripper', 'finger0', 'finger1',
+                  'ground', 'camera_box']
+
+   solver = IKSolver(
+       model_path=MOCK_XML_PATH,
+       attachement_frame_name="eef_site",
+       frame_type=AttachementFrameType.SITE,
+       initial_configuration=[0.0] * 6,
+       error_threshold=1e-3
+   )
+
+Add constraints to make trajectories safe and physically feasible:
+
+.. code-block:: python
+
+   # Collision avoidance — keeps links from intersecting
+   collision_pairs = IKSolver.generare_pairs_with_links(GEOM_NAMES, GEOM_NAMES)
+   solver.add_collision_config(solver.create_collision_limit(collision_pairs))
+
+   # Velocity limits — caps joint speeds (rad/s)
+   velocity_limits = {name: 2.0 for name in JOINT_NAMES}
+   solver.add_velocity_limit(solver.create_velocity_limit(velocity_limits))
+
+**IK solving internals:**
+
+.. code-block:: text
+
+             Target SE3 pose
+                  │
+                  v
+       ┌─────────────────────┐
+       │ Set EEF task target │
+       └─────────┬───────────┘
+                 │
+                 v
+       ┌─────────────────────┐
+       │ for step in steps:  │<──────────┐
+       │                     │           │
+       │  dq = solve_ik()   │  Compute joint velocity
+       │  dq *= gain         │  Apply damping
+       │  integrate(dq, dt)  │  Update joint config
+       │  mj_fwdPosition()   │  Forward kinematics
+       │                     │           │
+       │  error < threshold? │───NO──────┘
+       │        │            │
+       │       YES           │
+       └────────┼────────────┘
+                │
+                v
+         Joint trajectory
+         [q0, q1, ..., qN]
+
+---
+
+Step 4 — Connect the Hardware Interface
+----------------------------------------
+
+The ``RobotHardwareInterface`` is a pluggable abstraction. You set callback
+functions for connect, disconnect, move, and read operations.
+
+.. code-block:: python
+
+   from orion.hardware.predefined_interfaces import SimHardwareInterface
+
+   # For simulation / testing
+   interface = SimHardwareInterface(logger=print)
+   interface.connect()
+
+   # For real hardware (Piper robot)
+   # from orion.hardware.predefined_interfaces import PiperHardwareInterface
+   # interface = PiperHardwareInterface(logger=print)
+   # interface.connect(can_port="can0")
+
+---
+
+Step 5 — The Main Loop
+-----------------------
+
+With all systems initialized, the control loop ties everything together:
+
+.. code-block:: python
+
+   from orion.types import EndEffectorPosition, JointPosition
+   import random
+
+   JOINT_NAMES = ['joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6']
+
+   eef_target = EndEffectorPosition(
+       position=[0.2, 0.0, 0.3],
+       orientation=interface.state["end_effector"].orientation
+   )
+
+   while interface.get_connection_status():
+       # 1. Generate or receive a new target
+       eef_target.position[0] += random.uniform(-0.05, 0.05)
+
+       # 2. Solve inverse kinematics
+       result = solver.solveIK(T_target=eef_target.to_mink_se3())
+
+       # 3. Execute trajectory step by step
+       joint_pos = JointPosition(joint_length=6, joints_name=JOINT_NAMES)
+
+       for q in result["trajectory"]:
+           joint_pos.position = q
+           renderer.data.qpos = q        # update visualization
+           interface.move(joint_pos)      # send to hardware
+
+---
+
+Threading Model
+---------------
+
+Three background threads run concurrently during the loop:
+
+.. code-block:: text
+
+   ┌─────────────────────────────────────────────────────┐
+   │                    Main Thread                       │
+   │                                                     │
+   │  while connected:                                   │
+   │      target = get_new_target()                      │
+   │      traj   = solver.solveIK(target)                │
+   │      for q in traj:                                 │
+   │          interface.move(q)                           │
+   │          renderer.data.qpos = q                     │
+   └──────────────────────┬──────────────────────────────┘
+                          │
+           ┌──────────────┼──────────────┐
+           v              v              v
+     ┌───────────┐  ┌───────────┐  ┌───────────┐
+     │  Render   │  │  State    │  │  Sensor   │
+     │  Thread   │  │  Reader   │  │  Thread   │
+     │ (30 fps)  │  │ (30 Hz)   │  │ (30 Hz)   │
+     │           │  │           │  │           │
+     │ mj_forward│  │ read hw   │  │ read data │
+     │ render()  │  │ update    │  │ (optional)│
+     │ → shm     │  │ .state    │  │           │
+     └───────────┘  └───────────┘  └───────────┘
+
+---
+
+Quick Reference
+---------------
+
+.. list-table::
+   :header-rows: 1
+   :widths: 25 30 30
+
+   * - Component
+     - Class
+     - Key Method
+   * - Model loading
+     - ``mujoco.MjModel``
+     - ``.from_xml_path(path)``
+   * - Visualization
+     - ``Renderer``
+     - ``.start_realtime_stream(fps)``
+   * - IK solving
+     - ``IKSolver``
+     - ``.solveIK(target_se3)``
+   * - Collision check
+     - ``CollsionChecker``
+     - ``.check_collision(joint_pos)``
+   * - Robot control
+     - ``RobotHardwareInterface``
+     - ``.move(target)``
+   * - EEF position
+     - ``EndEffectorPosition``
+     - ``.to_mink_se3()``
+   * - Joint position
+     - ``JointPosition``
+     - ``.get_qpos()``

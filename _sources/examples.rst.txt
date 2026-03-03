@@ -1,0 +1,288 @@
+Examples
+========
+
+Orion ships with ready-to-run examples in the ``examples/`` folder.
+This page walks through each one.
+
+---
+
+IK Solver
+---------
+
+Solve inverse kinematics for a target end-effector pose with collision
+avoidance and velocity limits.
+
+.. code-block:: python
+
+   from orion.motion import IKSolver
+   from orion.types import AttachementFrameType
+   from orion.utils.constants import MOCK_XML_PATH
+   import numpy as np
+   import mink
+
+   JOINT_NAMES = ['joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6']
+   GEOM_NAMES  = ['base_link', 'link1', 'link2', 'link3', 'link4',
+                  'link5', 'link6', 'gripper', 'finger0', 'finger1',
+                  'ground', 'camera_box']
+
+   # Create the solver
+   solver = IKSolver(
+       model_path=MOCK_XML_PATH,
+       attachement_frame_name="eef_site",
+       frame_type=AttachementFrameType.SITE,
+       initial_configuration=[0.0] * 6,
+   )
+
+   # Add collision avoidance
+   collision_pairs = IKSolver.generare_pairs_with_links(GEOM_NAMES, GEOM_NAMES)
+   solver.add_collision_config(solver.create_collision_limit(collision_pairs))
+
+   # Add velocity limits
+   velocity_limits = {name: 2.0 for name in JOINT_NAMES}
+   solver.add_velocity_limit(solver.create_velocity_limit(velocity_limits))
+
+   # Define a target: move end-effector up by 10cm
+   ee_pose = solver.get_current_eef_pose()
+   translation = mink.SE3.from_translation(np.array([0.0, 0.0, 0.1]))
+   target = translation @ ee_pose
+
+   # Solve
+   result = solver.solveIK(T_target=target)
+   print(f"Solved in {result['steps']} steps")
+   print(f"Final joint config: {result['trajectory'][-1]}")
+
+See ``examples/IK_solver.py`` for the full version.
+
+---
+
+Connect a Robot
+---------------
+
+Use the hardware interface to connect and move a robot. The ``SimHardwareInterface``
+is a mock that works without any physical hardware.
+
+**With context manager:**
+
+.. code-block:: python
+
+   from orion.hardware.predefined_interfaces import SimHardwareInterface
+   from orion.types import EndEffectorPosition
+   import random, time
+
+   def logger(msg):
+       print(f"[ROBOT] {msg}")
+
+   with SimHardwareInterface(logger=logger) as interface:
+       while interface.get_connection_status():
+           time.sleep(3)
+
+           x = round(random.uniform(-1.5, 1.5), 2)
+           y = round(random.uniform(-1.5, 1.5), 2)
+           z = round(random.uniform(0.0, 1.5), 2)
+
+           target = EndEffectorPosition(
+               position=(x, y, z),
+               orientation=interface.state["end_effector"].orientation
+           )
+           interface.move(target)
+
+**Without context manager:**
+
+.. code-block:: python
+
+   interface = SimHardwareInterface(logger=logger)
+   interface.connect()
+
+   # ... same loop ...
+
+   interface.disconnect()
+
+See ``examples/connect_robot.py`` for the full version.
+
+---
+
+Collision Checking
+------------------
+
+Validate joint configurations for collisions independently of the IK solver.
+
+.. code-block:: python
+
+   from orion.motion import CollsionChecker
+   from orion.types import JointPosition
+
+   JOINT_NAMES = ['joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6']
+
+   checker = CollsionChecker(
+       model_path="robot.xml",
+       joint_names=JOINT_NAMES,
+       allowed_joints_list=["finger0", "finger1"],  # ignore gripper self-contact
+       logger=print,
+   )
+
+   # Test a joint configuration
+   qpos = JointPosition()
+   qpos.position = [1.35, 2.16, -0.5, -0.1, 0.5, -0.1]
+
+   collided, collisions = checker.check_collision(qpos)
+
+   if collided:
+       print(f"Collision detected: {collisions}")
+   else:
+       print("Path is safe")
+
+See ``examples/collision_check.py`` for the full version.
+
+---
+
+Rendering
+---------
+
+Take screenshots or stream a real-time 3D view of the robot.
+
+**Screenshot:**
+
+.. code-block:: python
+
+   from orion.motion import Renderer
+
+   renderer = Renderer(model_path="robot.xml", width=640, height=480)
+   renderer.take_screen_shot()
+
+See ``examples/render.py`` for the full version.
+
+---
+
+Real-Time Streaming
+-------------------
+
+Stream rendered frames via shared memory to a separate process.
+
+**Producer** — renders the scene and writes frames to shared memory:
+
+.. code-block:: python
+
+   from orion.motion import Renderer
+   import time
+
+   renderer = Renderer(model_path="robot.xml", width=640, height=480, debug=True)
+   renderer.enable_shared_memory_stream("mujoco_stream")
+   renderer.start_realtime_stream(fps=1)
+
+   preset_joints = [
+       [0.2, 0.0, 0.0, 0.0, 0.0, 0.0],
+       [0.4, 0.0, 0.0, 0.0, 0.0, 0.0],
+       [0.6, 0.0, 0.0, 0.0, 0.0, 0.0],
+   ]
+
+   while True:
+       for pos in preset_joints:
+           time.sleep(0.033)
+           renderer.data.qpos = pos
+
+**Consumer** — reads shared memory and displays with OpenCV:
+
+.. code-block:: python
+
+   import numpy as np
+   from multiprocessing import shared_memory
+   import cv2
+
+   shm = shared_memory.SharedMemory(name="mujoco_stream")
+   frame = np.ndarray((480, 640, 3), dtype=np.uint8, buffer=shm.buf)
+
+   while True:
+       frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+       cv2.imshow("Stream", frame_rgb)
+       if cv2.waitKey(1) & 0xFF == 27:
+           break
+
+   cv2.destroyAllWindows()
+   shm.close()
+
+See ``examples/realtime_rendering/`` for the full version.
+
+---
+
+Sensor Interface
+----------------
+
+Connect to sensors using the same callback-based pattern as hardware interfaces.
+
+.. code-block:: python
+
+   from orion.sensory.predefined_sensors import MockSensorInterface
+
+   def logger(msg):
+       print(f"[SENSOR] {msg}")
+
+   with MockSensorInterface(logger=logger, debug=True) as sensor:
+       while sensor.get_connection_status():
+           pass  # sensor reads data in background thread
+
+See ``examples/connect_sensor.py`` for the full version.
+
+---
+
+Full Control Loop
+-----------------
+
+The complete example combining renderer, IK solver, and hardware interface
+into a single control loop.
+
+.. code-block:: python
+
+   from orion.hardware.predefined_interfaces import SimHardwareInterface
+   from orion.types import EndEffectorPosition, JointPosition
+   from orion.motion import IKSolver, Renderer
+   from orion.types import AttachementFrameType
+   from orion.utils.constants import MOCK_XML_PATH
+   import random
+
+   JOINT_NAMES = ['joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6']
+   GEOM_NAMES  = ['base_link', 'link1', 'link2', 'link3', 'link4',
+                  'link5', 'link6', 'gripper', 'finger0', 'finger1',
+                  'ground', 'camera_box']
+
+   # 1. Renderer
+   renderer = Renderer(model_path=MOCK_XML_PATH, width=640, height=480, debug=True)
+   renderer.enable_shared_memory_stream("mujoco_stream")
+   renderer.start_realtime_stream(30)
+
+   # 2. IK Solver with constraints
+   solver = IKSolver(
+       model_path=MOCK_XML_PATH,
+       attachement_frame_name="eef_site",
+       frame_type=AttachementFrameType.SITE,
+       initial_configuration=[0.0] * 6,
+       error_threshold=1e-3
+   )
+   pairs = IKSolver.generare_pairs_with_links(GEOM_NAMES, GEOM_NAMES)
+   solver.add_collision_config(solver.create_collision_limit(pairs))
+
+   velocity_limits = {name: 2.0 for name in JOINT_NAMES}
+   solver.add_velocity_limit(solver.create_velocity_limit(velocity_limits))
+
+   # 3. Hardware interface
+   interface = SimHardwareInterface(logger=print)
+   interface.connect()
+
+   eef_pos = EndEffectorPosition(
+       position=[0.2, 0.0, 0.3],
+       orientation=interface.state["end_effector"].orientation
+   )
+
+   # 4. Main loop
+   while interface.get_connection_status():
+       eef_pos.position[0] += round(random.uniform(-0.05, 0.05), 2)
+
+       traj = solver.solveIK(T_target=eef_pos.to_mink_se3())
+
+       joint_pos = JointPosition(joint_length=6, joints_name=JOINT_NAMES)
+       for q in traj["trajectory"]:
+           joint_pos.position = q
+           renderer.data.qpos = q
+           interface.move(joint_pos)
+
+See ``examples/loop.py`` for the full version, and the :doc:`control-loop` guide
+for an in-depth explanation of each step.

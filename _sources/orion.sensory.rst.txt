@@ -1,0 +1,29 @@
+orion.sensory package
+=====================
+
+Subpackages
+-----------
+
+.. toctree::
+   :maxdepth: 4
+
+   orion.sensory.predefined_sensors
+
+Submodules
+----------
+
+orion.sensory.sensor module
+---------------------------
+
+.. automodule:: orion.sensory.sensor
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
+Module contents
+---------------
+
+.. automodule:: orion.sensory
+   :members:
+   :show-inheritance:
+   :undoc-members:

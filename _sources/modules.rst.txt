@@ -1,0 +1,88 @@
+API Reference
+=============
+
+This section contains the auto-generated API documentation for Orion's modules.
+
+.. tip::
+
+   To regenerate the API docs, run from the project root:
+
+   .. code-block:: bash
+
+      sphinx-apidoc -o docs/source/api src/orion
+
+---
+
+orion.motion
+------------
+
+.. automodule:: orion.motion
+   :members:
+   :undoc-members:
+
+.. autoclass:: orion.motion.IKSolver
+   :members:
+   :undoc-members:
+
+.. autoclass:: orion.motion.Renderer
+   :members:
+   :undoc-members:
+
+.. autoclass:: orion.motion.CollsionChecker
+   :members:
+   :undoc-members:
+
+---
+
+orion.hardware
+--------------
+
+.. automodule:: orion.hardware
+   :members:
+   :undoc-members:
+
+.. autoclass:: orion.hardware.predefined_interfaces.SimHardwareInterface
+   :members:
+   :undoc-members:
+
+.. autoclass:: orion.hardware.predefined_interfaces.PiperHardwareInterface
+   :members:
+   :undoc-members:
+
+---
+
+orion.sensory
+-------------
+
+.. automodule:: orion.sensory
+   :members:
+   :undoc-members:
+
+.. autoclass:: orion.sensory.SensorHardwareInterface
+   :members:
+   :undoc-members:
+
+---
+
+orion.types
+-----------
+
+.. automodule:: orion.types
+   :members:
+   :undoc-members:
+
+.. autoclass:: orion.types.EndEffectorPosition
+   :members:
+   :undoc-members:
+
+.. autoclass:: orion.types.JointPosition
+   :members:
+   :undoc-members:
+
+.. autoclass:: orion.types.AttachementFrameType
+   :members:
+   :undoc-members:
+
+.. autoclass:: orion.types.KinematicType
+   :members:
+   :undoc-members:
