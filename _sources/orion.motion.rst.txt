@@ -1,0 +1,37 @@
+orion.motion package
+====================
+
+Submodules
+----------
+
+orion.motion.IKSolver module
+----------------------------
+
+.. automodule:: orion.motion.IKSolver
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
+orion.motion.collision\_checker module
+--------------------------------------
+
+.. automodule:: orion.motion.collision_checker
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
+orion.motion.renderer module
+----------------------------
+
+.. automodule:: orion.motion.renderer
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
+Module contents
+---------------
+
+.. automodule:: orion.motion
+   :members:
+   :show-inheritance:
+   :undoc-members:

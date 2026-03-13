@@ -1,0 +1,45 @@
+orion.communication package
+===========================
+
+Submodules
+----------
+
+orion.communication.api module
+------------------------------
+
+.. automodule:: orion.communication.api
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
+orion.communication.serial module
+---------------------------------
+
+.. automodule:: orion.communication.serial
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
+orion.communication.socketClient module
+---------------------------------------
+
+.. automodule:: orion.communication.socketClient
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
+orion.communication.visaClient module
+-------------------------------------
+
+.. automodule:: orion.communication.visaClient
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
+Module contents
+---------------
+
+.. automodule:: orion.communication
+   :members:
+   :show-inheritance:
+   :undoc-members:

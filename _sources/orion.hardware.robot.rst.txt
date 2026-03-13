@@ -1,0 +1,21 @@
+orion.hardware.robot package
+============================
+
+Submodules
+----------
+
+orion.hardware.robot.robot module
+---------------------------------
+
+.. automodule:: orion.hardware.robot.robot
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
+Module contents
+---------------
+
+.. automodule:: orion.hardware.robot
+   :members:
+   :show-inheritance:
+   :undoc-members:
