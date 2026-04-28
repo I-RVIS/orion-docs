@@ -1,0 +1,69 @@
+.. image:: _static/logo.webp
+   :width: 200px
+   :align: center
+   :alt: Orion Logo
+
+Orion Documentation
+===================
+
+Welcome to the official documentation of **Orion**.
+
+Orion is a modular robotics framework designed for robotic arm control and autonomy.
+It provides a complete pipeline from inverse kinematics solving to hardware control,
+with built-in collision avoidance, real-time 3D visualization, and sensor integration.
+
+---
+
+Getting Started
+---------------
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Getting Started
+
+   installation
+   quickstart
+
+---
+
+Architecture
+------------
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Architecture
+
+   architecture
+   control-loop
+   camera-server
+
+---
+
+API Reference
+-------------
+
+.. toctree::
+   :maxdepth: 2
+   :caption: API Reference
+
+   modules
+
+---
+
+Examples
+--------
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Examples
+
+   examples
+
+---
+
+Indices and Tables
+------------------
+
+* :ref:`genindex`
+* :ref:`modindex`
+* :ref:`search`

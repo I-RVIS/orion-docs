@@ -1,0 +1,45 @@
+orion.aiblock package
+=====================
+
+Subpackages
+-----------
+
+.. toctree::
+   :maxdepth: 4
+
+   orion.aiblock.custom_model
+
+Submodules
+----------
+
+orion.aiblock.AIBlock module
+----------------------------
+
+.. automodule:: orion.aiblock.AIBlock
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
+orion.aiblock.utils module
+--------------------------
+
+.. automodule:: orion.aiblock.utils
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
+orion.aiblock.vision module
+---------------------------
+
+.. automodule:: orion.aiblock.vision
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
+Module contents
+---------------
+
+.. automodule:: orion.aiblock
+   :members:
+   :show-inheritance:
+   :undoc-members:

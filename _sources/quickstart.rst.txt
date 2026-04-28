@@ -1,0 +1,139 @@
+Quickstart
+==========
+
+This guide walks you through a minimal Orion workflow so you can
+get up and running in just a few minutes.
+
+---
+
+Basic Import
+------------
+
+After installation, verify that Orion is available:
+
+.. code-block:: python
+
+   import orion
+   print(orion.__version__)
+
+---
+
+Minimal IK Example
+-------------------
+
+Solve inverse kinematics for a simple target pose:
+
+.. code-block:: python
+
+   from orion.motion import IKSolver
+   from orion.types import AttachementFrameType
+   from orion.utils.constants import MOCK_XML_PATH
+   import mink, numpy as np
+
+   solver = IKSolver(
+       model_path=MOCK_XML_PATH,
+       attachement_frame_name="eef_site",
+       frame_type=AttachementFrameType.SITE,
+       initial_configuration=[0.0] * 6,
+   )
+
+   # Get current pose and apply a small translation
+   ee_pose = solver.get_current_eef_pose()
+   target = mink.SE3.from_translation(np.array([0.0, 0.0, 0.1])) @ ee_pose
+
+   result = solver.solveIK(T_target=target)
+   print(f"Solved in {result['steps']} steps")
+   print(f"Final config: {result['trajectory'][-1]}")
+
+---
+
+Move a Simulated Robot
+----------------------
+
+Connect to a mock robot interface and send a move command:
+
+.. code-block:: python
+
+   from orion.hardware.predefined_interfaces import SimHardwareInterface
+   from orion.types import EndEffectorPosition
+
+   with SimHardwareInterface() as robot:
+       target = EndEffectorPosition(
+           position=[0.2, 0.0, 0.3],
+           orientation=[0.0, 0.0, 0.0]
+       )
+       robot.move(target)
+       print(robot.beautify())
+
+---
+
+Take a Screenshot
+-----------------
+
+Render a snapshot of the robot model:
+
+.. code-block:: python
+
+   from orion.motion import Renderer
+   from orion.utils.constants import MOCK_XML_PATH
+
+   renderer = Renderer(model_path=MOCK_XML_PATH, width=640, height=480)
+   renderer.take_screen_shot()
+
+---
+
+Capture a Camera Frame
+----------------------
+
+Read a frame from a connected camera:
+
+.. code-block:: python
+
+   from orion.sensory.predefined_sensors import CameraSensorInterface
+
+   with CameraSensorInterface(name="webcam", logger=print) as camera:
+       frame = camera.capture_frame()
+       print(f"Frame shape: {frame.shape}")  # e.g. (480, 640, 3)
+
+---
+
+Process an Image
+----------------
+
+Apply basic postprocessing to a camera frame:
+
+.. code-block:: python
+
+   from orion.sensory.vision.postprocessor import color2gray, edge_detection
+
+   gray = color2gray(frame)
+   edges = edge_detection(frame)
+
+---
+
+Send a Serial Command
+---------------------
+
+Communicate with a device over a serial port:
+
+.. code-block:: python
+
+   from orion.communication import SerialCommunicator
+
+   comm = SerialCommunicator(port="COM3", baudrate=115200)
+   if comm.connect():
+       comm.write("ping")
+       print(comm.read())
+       comm.disconnect()
+
+---
+
+Next Steps
+----------
+
+Now that you have a basic setup running, you may want to:
+
+- Read the :doc:`architecture` guide to understand the main modules
+- Follow the :doc:`control-loop` guide for a complete integration example
+- Browse the :doc:`examples` for more use cases
+- Check the :doc:`modules` for API details

@@ -1,0 +1,21 @@
+orion.sensory.vision package
+============================
+
+Submodules
+----------
+
+orion.sensory.vision.postprocessor module
+-----------------------------------------
+
+.. automodule:: orion.sensory.vision.postprocessor
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
+Module contents
+---------------
+
+.. automodule:: orion.sensory.vision
+   :members:
+   :show-inheritance:
+   :undoc-members:

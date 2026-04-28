@@ -1,0 +1,316 @@
+Camera Server
+=============
+
+The :class:`orion.sensory.camera_server.CameraServer` is a single, long-lived
+process that owns every physical camera attached to the host and exposes their
+frames to any number of clients through two transports:
+
+- **HTTP** — JSON catalog, JPEG snapshots, MJPEG streams, RealSense depth and
+  intrinsics, served by FastAPI / uvicorn on port ``8585`` by default.
+- **POSIX shared memory** — zero-copy ``BGR`` (and uint16 depth) frames that
+  any other Python process on the same host can read with a couple of
+  ``numpy.ndarray`` views.
+
+Why a dedicated server? OpenCV's ``VideoCapture`` and ``pyrealsense2`` both
+hold an exclusive lock on the underlying USB device. Running them in every
+process that needs an image quickly leads to ``Device or resource busy``
+errors. Centralising capture in one process — and broadcasting frames over
+shared memory — avoids that contention while keeping the per-frame cost close
+to a memcpy.
+
+---
+
+Architecture overview
+---------------------
+
+::
+
+   ┌──────────────────────────────────────────────────────────────┐
+   │                        CameraServer                          │
+   │                                                              │
+   │   _merge_discovered() ──► CameraEntry / RealSenseEntry       │
+   │                                  │                           │
+   │   enable(id) ──► _CameraCapture or _RealSenseCapture         │
+   │                  ├── opens cv2.VideoCapture or rs.pipeline   │
+   │                  ├── allocates SharedMemory(orion_cam_{id})  │
+   │                  └── spawns capture thread                   │
+   │                                                              │
+   │   FastAPI app  ──► /camera/list, /enable, /frame, /stream…   │
+   └──────────────────────────────────────────────────────────────┘
+              │                                  │
+              │ HTTP                              │ shared memory
+              ▼                                  ▼
+       Web UI / scripts                   read_shared_frame()
+                                          read_shared_depth()
+
+Key design points:
+
+- **Lazy resource allocation.** ``GET /camera/list`` only enumerates devices.
+  No ``VideoCapture``, no shm, no thread is created until a client explicitly
+  ``enable``\ s a camera.
+- **Persistent IDs.** The ``{camera_name → id}`` map is stored in
+  ``~/.orion/camera_ids.json``. IDs grow monotonically, so a script that hard
+  codes ``camera_id=0`` keeps working across restarts and reboots.
+- **Pause vs disable.** ``pause`` releases the V4L2 / RealSense fd but keeps
+  the shared-memory segment around (with the ``STALE`` flag set), so another
+  library — typically ``pyrealsense2`` for an ad-hoc intrinsics query — can
+  claim the device temporarily and the stream resumes seamlessly. ``disable``
+  drops everything.
+- **Per-entry lock.** Every camera entry has its own ``RLock``, so different
+  cameras can transition states in parallel without blocking each other.
+
+---
+
+Running the server
+------------------
+
+CLI
+^^^
+
+.. code-block:: bash
+
+   python -m orion.sensory.camera_server --port 8585 --width 640 --height 480 --fps 30
+
+Useful flags:
+
+- ``--port``         port for the HTTP server (default ``8585``)
+- ``--width`` / ``--height`` / ``--fps``  default capture profile applied to cameras
+  enabled without explicit dimensions
+- ``--auto-enable``  open every detected camera on startup (legacy behaviour)
+
+Embedded
+^^^^^^^^
+
+.. code-block:: python
+
+   from orion.sensory.camera_server import CameraServer
+
+   server = CameraServer(port=8585)
+   server.start()                              # discover only, no captures
+   server.enable(0, width=1280, height=720, fps=30)
+
+   with server.paused(0, reason="depth"):      # context manager
+       # device is free here — pyrealsense2 can claim it
+       ...
+
+   server.disable(0)
+   server.stop()
+
+---
+
+Camera states
+-------------
+
+Each entry walks through the following state machine
+(:class:`~orion.sensory.camera_server.CameraState`):
+
+==============  =====================================================================
+State           Meaning
+==============  =====================================================================
+``available``   discovered, no resources allocated
+``enabling``    transient — opening the device
+``active``      capture thread running, shm + JPEG cache fresh
+``paused``      device released, shm kept (frames marked with ``FLAG_STALE``)
+``failed``      last open attempt failed; see ``last_error`` on the entry
+==============  =====================================================================
+
+Allowed transitions:
+
+- ``available → enabling → active`` (via ``enable``)
+- ``available → failed`` (via ``enable`` when the device cannot be opened)
+- ``active → paused`` (via ``pause``)
+- ``paused → active`` (via ``resume``)
+- ``active|paused|failed → available`` (via ``disable``)
+
+---
+
+HTTP API
+--------
+
+Base URL: ``http://<host>:8585``
+
+================================================  ====  =================================================================
+Endpoint                                          Verb  Description
+================================================  ====  =================================================================
+``/camera/list``                                  GET   Catalog of all discovered cameras with current state
+``/camera/{id}/enable``                           POST  Open device, allocate shm, start capture thread
+``/camera/{id}/disable``                          POST  Stop thread, release device, drop shm
+``/camera/{id}/pause``                            POST  Release device, keep shm (frames flagged ``STALE``)
+``/camera/{id}/resume``                           POST  Re-open device after a pause
+``/camera/{id}/frame``                            GET   Latest color JPEG snapshot (``image/jpeg``)
+``/camera/{id}/stream``                           GET   Color MJPEG stream (``multipart/x-mixed-replace``)
+``/camera/{id}/status``                           GET   Full state, requested/actual resolution, last error, timestamp
+``/camera/{id}/depth/frame``                      GET   16-bit depth PNG (RealSense only)
+``/camera/{id}/depth/stream``                     GET   16-bit depth MPNG stream (RealSense only)
+``/camera/{id}/depth/colorized/frame``            GET   8-bit colormap JPEG of the depth, UI-friendly
+``/camera/{id}/depth/colorized/stream``           GET   8-bit colormap MJPEG of the depth, UI-friendly
+``/camera/{id}/intrinsics``                       GET   Cached or freshly queried RealSense color/depth intrinsics
+================================================  ====  =================================================================
+
+Optional JSON body for ``POST /camera/{id}/enable``:
+
+.. code-block:: json
+
+   {"width": 1280, "height": 720, "fps": 30}
+
+Common HTTP error codes:
+
+- ``404`` — unknown camera id
+- ``409`` — wrong state (``camera_not_enabled``, ``paused``)
+- ``500`` — device open / runtime failure (see ``error`` field)
+- ``503`` — enabled but no frame produced yet
+
+When a frame is served while the camera is paused, the response carries the
+header ``X-Orion-Stale: 1``. The same information is exposed in the shared
+memory header through the ``FLAG_STALE`` bit.
+
+Example: enable a camera and grab a frame with ``curl``:
+
+.. code-block:: bash
+
+   curl -X POST http://localhost:8585/camera/0/enable \
+        -H 'Content-Type: application/json' \
+        -d '{"width": 1280, "height": 720, "fps": 30}'
+
+   curl -o frame.jpg http://localhost:8585/camera/0/frame
+
+---
+
+Shared memory transport
+-----------------------
+
+Each enabled camera owns one (UVC) or two (RealSense) shared-memory segments:
+
+- ``orion_cam_{id}``         — color, ``BGR uint8``
+- ``orion_cam_{id}_depth``   — depth, ``uint16`` (RealSense only)
+
+Header layout (20 bytes, all ``uint32`` little-endian):
+
+==============  ======  =====================================================
+Offset (bytes)  Field   Meaning
+==============  ======  =====================================================
+``0..3``        width   pixel width
+``4..7``        height  pixel height
+``8..11``       channels  ``3`` for color BGR, ``1`` for the depth segment
+``12..15``      timestamp_ms  capture timestamp (``time.time() * 1000`` mod 2³²)
+``16..19``      flags   bit 0 = ``FLAG_STALE``, bit 1 = ``FLAG_DISABLED``
+==============  ======  =====================================================
+
+Body:
+
+- Color: ``width * height * 3`` bytes of ``uint8`` BGR.
+- Depth: ``width * height * 2`` bytes interpreted as ``uint16``. The values are
+  in the device's native units; multiply by ``depth_scale`` (from
+  ``/camera/{id}/intrinsics``) to obtain meters.
+
+Reading from any process
+^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. code-block:: python
+
+   from orion.sensory.camera_server import (
+       read_shared_frame,
+       read_shared_depth,
+       FLAG_STALE,
+   )
+
+   frame, ts, flags = read_shared_frame(camera_id=0)
+   if frame is not None and not (flags & FLAG_STALE):
+       # frame is a fresh BGR uint8 numpy array
+       ...
+
+   depth, ts, flags = read_shared_depth(camera_id=0)   # RealSense
+   if depth is not None:
+       depth_meters = depth.astype("float32") * depth_scale
+
+Both helpers return ``(None, 0, 0)`` when the segment does not exist (no
+camera with that id is enabled) and copy the data out of the mapped buffer so
+the caller can use it after the underlying segment is unmapped.
+
+The ``CameraSensorInterface`` predefined sensor uses ``read_shared_frame``
+internally — opening a camera through ``CameraServer`` and then consuming it
+through the predefined interface in another process is the supported pattern.
+
+---
+
+RealSense specifics
+-------------------
+
+RealSense devices are enumerated through ``pyrealsense2`` (when available) so
+that two physically identical D435s plugged side-by-side appear as two
+distinct entries in ``/camera/list``, each keyed by serial number.
+
+The ``_RealSenseCapture`` runtime owns a single ``rs.pipeline`` that produces
+both color and depth, hardware-aligned to the color stream
+(``rs.align(rs.stream.color)``). Both frames share the same intrinsics,
+resolution, and timestamp, and are written to ``orion_cam_{id}`` and
+``orion_cam_{id}_depth`` respectively.
+
+Intrinsics caching
+^^^^^^^^^^^^^^^^^^
+
+RealSense intrinsics are persisted in ``~/.orion/realsense_intrinsics.json``,
+keyed by serial number and stream resolution. The first call to
+``/camera/{id}/intrinsics`` queries the device (briefly auto-pausing the
+stream if needed); subsequent calls answer from the cache without ever
+touching the device. Intrinsics are also opportunistically cached when
+``enable`` opens the pipeline, so most production calls land directly on the
+fast path.
+
+Response shape:
+
+.. code-block:: json
+
+   {
+     "available": true,
+     "source": "cache",
+     "auto_paused": false,
+     "depth_scale": 0.001,
+     "serial": "1234567890",
+     "intrinsicMatrix": [[fx, 0, ppx], [0, fy, ppy], [0, 0, 1]],
+     "distortionCoeffs": [...],
+     "distortionModel": "brown_conrady",
+     "resolution": [1280, 720],
+     "depth": { /* same shape as the top-level color block */ }
+   }
+
+---
+
+Persistent stores
+-----------------
+
+================================================  ====================================================
+Path                                              Purpose
+================================================  ====================================================
+``~/.orion/camera_ids.json``                      ``{camera_name → id}`` so ids stay stable over reboots
+``~/.orion/realsense_intrinsics.json``            Cached RealSense intrinsics, keyed by serial + WxH
+================================================  ====================================================
+
+Both files are written atomically (``*.tmp`` + ``rename``) and are safe to
+delete — the server will rebuild them on the next discovery / intrinsics
+query.
+
+---
+
+API reference
+-------------
+
+.. autoclass:: orion.sensory.camera_server.CameraServer
+   :members:
+   :undoc-members:
+
+.. autoclass:: orion.sensory.camera_server.CameraState
+   :members:
+   :undoc-members:
+
+.. autoclass:: orion.sensory.camera_server.CameraEntry
+   :members:
+   :undoc-members:
+
+.. autoclass:: orion.sensory.camera_server.RealSenseEntry
+   :members:
+   :undoc-members:
+
+.. autofunction:: orion.sensory.camera_server.read_shared_frame
+
+.. autofunction:: orion.sensory.camera_server.read_shared_depth

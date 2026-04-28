@@ -1,0 +1,38 @@
+orion.sensory package
+=====================
+
+Subpackages
+-----------
+
+.. toctree::
+   :maxdepth: 4
+
+   orion.sensory.predefined_sensors
+   orion.sensory.vision
+
+Submodules
+----------
+
+orion.sensory.camera\_server module
+-----------------------------------
+
+.. automodule:: orion.sensory.camera_server
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
+orion.sensory.sensor module
+---------------------------
+
+.. automodule:: orion.sensory.sensor
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
+Module contents
+---------------
+
+.. automodule:: orion.sensory
+   :members:
+   :show-inheritance:
+   :undoc-members:

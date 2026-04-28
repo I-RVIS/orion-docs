@@ -1,0 +1,24 @@
+orion package
+=============
+
+Subpackages
+-----------
+
+.. toctree::
+   :maxdepth: 4
+
+   orion.aiblock
+   orion.communication
+   orion.hardware
+   orion.motion
+   orion.sensory
+   orion.types
+   orion.utils
+
+Module contents
+---------------
+
+.. automodule:: orion
+   :members:
+   :show-inheritance:
+   :undoc-members:

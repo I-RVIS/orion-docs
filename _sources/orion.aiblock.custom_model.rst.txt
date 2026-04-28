@@ -1,0 +1,21 @@
+orion.aiblock.custom\_model package
+===================================
+
+Submodules
+----------
+
+orion.aiblock.custom\_model.custom\_vision module
+-------------------------------------------------
+
+.. automodule:: orion.aiblock.custom_model.custom_vision
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
+Module contents
+---------------
+
+.. automodule:: orion.aiblock.custom_model
+   :members:
+   :show-inheritance:
+   :undoc-members:

@@ -1,0 +1,391 @@
+Architecture
+============
+
+Orion is organized into five main modules, each handling a distinct part of the
+robotic control pipeline.
+
+---
+
+Overview
+--------
+
+.. code-block:: text
+
+                  ┌──────────────┐
+                  │   Sensors    │  Camera, Microphone, ...
+                  └──────┬───────┘
+                         │
+                         v
+   ┌──────────┐   ┌──────────────┐   ┌───────────────────┐
+   │  Target   │──>│  IK Solver   │──>│ Hardware Interface │──> Robot
+   │ Position  │   │ + Collision   │   │  (Sim / Piper)    │
+   └──────────┘   └──────┬───────┘   └───────────────────┘
+                         │
+                         v
+                  ┌──────────────┐
+                  │   Renderer   │  Real-time 3D view
+                  └──────────────┘
+
+---
+
+Module: ``orion.motion``
+------------------------
+
+The motion module handles everything related to robot movement computation
+and visualization.
+
+**IKSolver**
+
+The inverse kinematics solver converts end-effector targets (position + orientation)
+into joint-space trajectories. It uses an iterative optimization loop powered by
+``mink`` and the DAQP quadratic programming solver.
+
+Key capabilities:
+
+- Solve for a target SE3 pose with configurable error threshold
+- Add collision avoidance constraints between geometry pairs
+- Add joint velocity limits
+- Add posture tasks (regularization toward a reference configuration)
+- Returns a full trajectory ``[q0, q1, ..., qN]`` of joint configurations
+
+.. code-block:: python
+
+   from orion.motion import IKSolver
+   from orion.types import AttachementFrameType
+
+   solver = IKSolver(
+       model_path="robot.xml",
+       attachement_frame_name="eef_site",
+       frame_type=AttachementFrameType.SITE,
+       initial_configuration=[0.0] * 6,
+       error_threshold=1e-3
+   )
+
+   # Add constraints
+   pairs = IKSolver.generare_pairs_with_links(GEOM_NAMES, GEOM_NAMES)
+   solver.add_collision_config(solver.create_collision_limit(pairs))
+   solver.add_velocity_limit(solver.create_velocity_limit(velocity_limits))
+
+   # Solve
+   result = solver.solveIK(T_target=target_se3)
+   # result = {"trajectory": [...], "steps": 42, "converged": True, "final_error": 0.0003}
+
+**Renderer**
+
+The renderer creates a real-time 3D visualization of the robot using MuJoCo.
+It runs in a background thread and can publish frames to shared memory for
+inter-process streaming (e.g. to a GUI or web viewer).
+
+.. code-block:: python
+
+   from orion.motion import Renderer
+
+   renderer = Renderer(model_path="robot.xml", width=640, height=480)
+   renderer.enable_shared_memory_stream("mujoco_stream")
+   renderer.start_realtime_stream(fps=30)
+
+   # Update the robot pose from the main thread
+   renderer.data.qpos = [0.1, 0.2, 0.3, 0.0, 0.0, 0.0]
+
+**CollisionChecker**
+
+A standalone collision checker for validating joint configurations outside
+the IK loop. Useful for custom planners or trajectory validation.
+
+.. code-block:: python
+
+   from orion.motion import CollsionChecker
+
+   checker = CollsionChecker(
+       model_path="robot.xml",
+       joint_names=JOINT_NAMES,
+       allowed_joints_list=["finger0", "finger1"],
+   )
+
+   collided, pairs = checker.check_collision(joint_position)
+
+---
+
+Module: ``orion.hardware``
+--------------------------
+
+The hardware module provides a pluggable abstraction layer for robot control.
+You define behavior through callbacks — connect, disconnect, move, and read —
+making it easy to swap between simulated and real hardware.
+
+.. code-block:: text
+
+   ┌──────────────────────────────────┐
+   │    RobotHardwareInterface        │
+   │                                  │
+   │  set_connect_function(fn)        │
+   │  set_disconnect_function(fn)     │
+   │  set_move_function(fn)           │
+   │  start_state_reader(fn, hz)      │
+   │                                  │
+   │  .state["joint"]                 │  ← updated by background thread
+   │  .state["end_effector"]          │
+   └──────────────┬───────────────────┘
+                  │
+        ┌─────────┴─────────┐
+        v                   v
+   SimHardwareInterface   PiperHardwareInterface
+   (mock for testing)     (AgileX Piper via CAN)
+
+**Predefined interfaces:**
+
+- ``SimHardwareInterface`` — Instant mock updates, no hardware needed. Ideal for
+  development and testing.
+- ``PiperHardwareInterface`` — Controls the AgileX Piper robot arm via CAN bus
+  using the ``piper_control`` library.
+
+Both support context manager usage:
+
+.. code-block:: python
+
+   from orion.hardware.predefined_interfaces import SimHardwareInterface
+
+   with SimHardwareInterface() as robot:
+       robot.move(target_position)
+
+Or manual connection:
+
+.. code-block:: python
+
+   robot = SimHardwareInterface()
+   robot.connect()
+   # ...
+   robot.disconnect()
+
+---
+
+Module: ``orion.sensory``
+-------------------------
+
+The sensory module provides a generic interface for sensors. Like the hardware
+module, it uses a callback-based architecture with background reading threads
+and automatic reconnection support.
+
+.. code-block:: text
+
+   SensorHardwareInterface
+        │
+        ├── Camera           (video capture)
+        ├── Microphone       (audio capture)
+        └── MockSensor       (testing)
+
+.. code-block:: python
+
+   from orion.sensory.predefined_sensors import CameraSensorInterface
+
+   with CameraSensorInterface(name="HD Camera", logger=print, debug=True) as camera:
+       while camera.get_connection_status():
+           frame = camera.capture_frame()  # numpy BGR array
+
+Key sensor capabilities:
+
+- Background reading thread at configurable frequency (default 30 Hz)
+- Automatic reconnection on failure with configurable interval
+- Event callbacks: ``on_data``, ``on_error``, ``on_connect``
+- Context manager support for automatic connect/disconnect
+- Thread-safe data access
+
+**CameraSensorInterface**
+
+OpenCV-based camera sensor with auto-device detection, configurable resolution,
+and optional live preview window. Supports auto-reconnection on camera disconnect.
+
+.. code-block:: python
+
+   camera = CameraSensorInterface(
+       name="webcam",
+       camera_name=None,       # auto-detect
+       show_preview=True,      # display OpenCV preview window
+       logger=print,
+   )
+
+**Vision Postprocessor**
+
+The ``orion.sensory.vision.postprocessor`` module provides image processing
+utilities for working with camera frames:
+
+.. code-block:: python
+
+   from orion.sensory.vision.postprocessor import (
+       color2gray, edge_detection, resize_image,
+       blur_image, denoise_image, sharpen_image,
+       erode_image, dilate_image,
+   )
+
+   gray = color2gray(frame)                          # BGR to grayscale
+   edges = edge_detection(frame)                      # Canny edge detection
+   resized = resize_image(frame, width=320, height=240)
+   blurred = blur_image(frame, kernel_size=(5, 5))    # Gaussian blur
+   denoised = denoise_image(frame, h=10)              # Non-local means denoising
+   sharp = sharpen_image(frame)                        # Sharpening kernel
+   eroded = erode_image(frame, kernel_size=(3, 3))     # Morphological erosion
+   dilated = dilate_image(frame, kernel_size=(3, 3))   # Morphological dilation
+
+---
+
+Module: ``orion.communication``
+--------------------------------
+
+The communication module provides interfaces for serial port communication,
+HTTP API calls, TCP socket connections, and VISA instrument control.
+
+**SerialCommunicator**
+
+A serial interface for sending and receiving data over a serial port
+(e.g., USB-to-serial adapters, microcontrollers).
+
+.. code-block:: python
+
+   from orion.communication import SerialCommunicator
+
+   comm = SerialCommunicator(
+       port="COM3",
+       baudrate=115200,
+       device_name="arduino",
+       logger=print,
+       debug=True,
+   )
+
+   if comm.connect():
+       comm.write("Hello")
+       response = comm.read()
+       comm.disconnect()
+
+Key features:
+
+- Configurable port, baud rate, timeout, and encoding
+- Optional logger callback and debug mode
+- ``write()`` automatically appends a configurable carriage-return byte
+- ``read()`` returns decoded string or ``None`` on failure
+- ``is_connected()`` / ``check_connection()`` for connection health checks
+
+**API**
+
+A lightweight HTTP client for making GET and POST requests to a REST API.
+
+.. code-block:: python
+
+   from orion.communication import API
+
+   client = API(
+       base_url="http://robot.local",
+       timeout=5,
+       headers={"Authorization": "Bearer token"},
+   )
+
+   status = client.get("status")
+   result = client.post("command", data={"action": "move"})
+
+Key features:
+
+- Configurable base URL, timeout, and headers
+- ``get(endpoint, params)`` — performs a GET request with optional query parameters
+- ``post(endpoint, data)`` — performs a POST request with optional JSON body
+- Raises ``requests.HTTPError`` on non-2xx responses via ``raise_for_status()``
+
+**SocketClient**
+
+A simple TCP client for communicating with a server over a socket connection.
+
+.. code-block:: python
+
+   from orion.communication import SocketClient
+
+   client = SocketClient(
+       host="192.168.1.10",
+       port=5000,
+       timeout=10,
+       buffer_size=1024,
+       name="robot_socket",
+   )
+
+   client.connect()
+   client.send(b"Hello")
+   data = client.receive()
+   client.close()
+
+Key features:
+
+- Configurable host, port, timeout, and buffer size
+- ``send(data)`` — sends raw bytes via ``sendall``
+- ``receive(buffer_size)`` — returns raw bytes from the server
+- ``close()`` — closes the socket and resets the connection
+
+**VisaClient**
+
+A VISA instrument client for communicating with lab equipment (e.g., oscilloscopes,
+power supplies) over TCP/IP using ``pyvisa``.
+
+.. code-block:: python
+
+   from orion.communication import VisaClient
+
+   client = VisaClient(
+       host="192.168.1.20",
+       device_name="inst0",
+   )
+
+   if client.connect():
+       client.write("*IDN?")
+       idn = client.read()
+       response = client.query("MEAS:VOLT?")
+       client.close()
+
+Key features:
+
+- Connects via VISA resource string ``TCPIP::<host>::<device_name>::INSTR``
+- ``write(command)`` — sends a command string to the instrument
+- ``read()`` — reads a response string from the instrument
+- ``query(command)`` — sends a command and reads the response in one call
+- ``is_connected()`` / ``close()`` for connection lifecycle management
+
+---
+
+Module: ``orion.types``
+-----------------------
+
+The types module provides strongly typed data structures for positions
+and configurations.
+
+**EndEffectorPosition**
+
+Represents a 6-DOF end-effector pose (position + orientation in Euler angles).
+
+.. code-block:: python
+
+   from orion.types import EndEffectorPosition
+
+   eef = EndEffectorPosition(
+       position=[0.2, 0.0, 0.3],
+       orientation=[0.0, 0.0, 0.0]   # Euler XYZ in radians
+   )
+
+   se3 = eef.to_mink_se3()       # Convert to mink SE3 for IK solver
+   quat = eef.to_quaternion()     # Convert to [x, y, z, w]
+   info = eef.beautify()          # Human-readable dict
+
+**JointPosition**
+
+Represents a joint-space configuration.
+
+.. code-block:: python
+
+   from orion.types import JointPosition
+
+   joints = JointPosition(
+       joint_length=6,
+       joints_name=["joint1", "joint2", "joint3", "joint4", "joint5", "joint6"]
+   )
+   joints.position = [0.1, 0.2, 0.3, 0.0, 0.0, 0.0]
+
+   qpos = joints.get_qpos()
+
+**Enums**
+
+- ``AttachementFrameType`` — Frame type in MuJoCo: ``SITE``, ``BODY``, or ``GEOM``
+- ``KinematicType`` — Control mode: ``JOINT`` or ``EEF``
